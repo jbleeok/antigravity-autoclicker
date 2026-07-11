@@ -4,7 +4,7 @@
 ; ==============================================================================
 ; 전역 변수 및 설정
 ; ==============================================================================
-SetTitleMatchMode 2 ; 창 제목에 "Antigravity"가 포함되어 있으면 일치
+SetTitleMatchMode "RegEx" ; 정규식을 사용하여 프로세스 이름의 일부만으로도 매칭 가능하게 설정
 
 global IniFile := A_ScriptDir "\antigravity_j06.ini"
 global autoEnabled := 0
@@ -60,9 +60,9 @@ SaveSettings() {
 }
 
 ; ==============================================================================
-; 메인 GUI (Antigravity Commit)
+; 메인 GUI (Auto Commit)
 ; ==============================================================================
-global MainGui := Gui("+AlwaysOnTop +ToolWindow -DPIScale", "Antigravity Commit")
+global MainGui := Gui("+AlwaysOnTop +ToolWindow -DPIScale", "Auto Commit")
 MainGui.BackColor := "1e1e2e" ; Catppuccin Mocha 배경색
 
 ; 글꼴 설정
@@ -118,7 +118,7 @@ WM_EXITSIZEMOVE(wParam, lParam, msg, hwnd) {
 ; ==============================================================================
 ; J06 링 키 리매핑 (Antigravity 활성 시 동작)
 ; ==============================================================================
-#HotIf WinActive("Antigravity")
+#HotIf WinActive("ahk_exe i)Antigravity")
 
 ; VOLUME_MUTE (우측 아래 버튼) 누르면 화면 내의 확인 버튼(Submit, Accept 등)을 찾아 즉시 클릭
 Volume_Mute:: {
@@ -134,15 +134,15 @@ Volume_Down::Send("{Enter}")
 ; ImageSearch 기반 자동 스캔 & 클릭
 ; ==============================================================================
 AutoScan() {
-    if !WinActive("Antigravity")
+    if !WinExist("ahk_exe i)Antigravity")
         return
 
-    ; 좌표계를 대상 창의 Client(내부 영역) 기준으로 통일
-    CoordMode "Pixel", "Client"
+    ; 좌표계를 화면 전체(Screen) 기준으로 통일 (창이 비활성 상태여도 검색 가능하도록)
+    CoordMode "Pixel", "Screen"
     
-    ; 창의 내부 크기(Client Area) 획득
+    ; 창의 내부 크기(Client Area)와 화면상의 절대 좌표(cx, cy) 획득
     try {
-        WinGetClientPos(,, &cw, &ch, "Antigravity")
+        WinGetClientPos(&cx, &cy, &cw, &ch, "ahk_exe i)Antigravity")
         if (cw <= 0 || ch <= 0)
             return
     } catch {
@@ -160,10 +160,12 @@ AutoScan() {
         if !(ext = "png" || ext = "bmp")
             continue
 
-        ; 오차 범위를 50으로 살짝 높여 렌더링 미세 오차(안티앨리어싱 등) 허용
-        ; 절전모드/스크린세이버 등 화면 핸들에 접근할 수 없을 때 발생하는 에러(Error 6)를 무시
+        ToolTip("검색 시도 중: " A_LoopFileName " (창 크기: " cw "x" ch ")", 10, 10)
+        SetTimer(() => ToolTip(,,, 1), -1000)
+
+        ; 오차 범위를 80으로 높여 투명도/그림자/안티앨리어싱 차이 허용
         try {
-            found := ImageSearch(&FoundX, &FoundY, 0, 0, cw, ch, "*50 " A_LoopFilePath)
+            found := ImageSearch(&FoundX, &FoundY, cx, cy, cx + cw, cy + ch, "*80 " A_LoopFilePath)
         } catch {
             return
         }
@@ -180,18 +182,24 @@ AutoScan() {
                 tempGui.Destroy()
             }
             
-            ClickX := FoundX + (imgW // 2)
-            ClickY := FoundY + (imgH // 2)
+            ; FoundX, FoundY는 Screen 기준 좌표이므로, ControlClick을 위해 Client 상대 좌표로 변환
+            ClickX := FoundX - cx + (imgW // 2)
+            ClickY := FoundY - cy + (imgH // 2)
             
             ; 대상 창의 Client 좌표를 클릭 (NA: 마우스 포커스 뺏지 않음)
-            ControlClick("x" ClickX " y" ClickY, "Antigravity",,,, "NA")
+            ControlClick("x" ClickX " y" ClickY, "ahk_exe i)Antigravity",,,, "NA")
             
-            ; 매칭 성공 여부를 화면에 잠깐 띄워줌 (디버깅용)
-            ToolTip("자동 클릭 완료: " A_LoopFileName)
-            SetTimer(() => ToolTip(), -1500)
+            ; 매칭 성공 여부를 화면에 띄워줌
+            ToolTip("✔️ 찾음 & 클릭 시도: " A_LoopFileName, 10, 50, 2)
+            SetTimer(() => ToolTip(,,, 2), -2000)
             
             break
         }
+    }
+    
+    if (!found) {
+        ToolTip("❌ 이미지를 찾지 못했습니다.", 10, 50, 2)
+        SetTimer(() => ToolTip(,,, 2), -2000)
     }
 }
 
