@@ -1,5 +1,6 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
+#Include <FindText>
 
 ; ==============================================================================
 ; 전역 변수 및 설정
@@ -13,6 +14,7 @@ global guiY := ""
 global scanIntervalMs := 1000
 
 global autoClickTargets := []
+global findTextTargets := []   ; FindText 검색 문자열 목록 (INI [FindTextTargets]에서 로딩)
 
 ; ==============================================================================
 ; INI 파일 처리
@@ -47,6 +49,14 @@ LoadSettings() {
     }
     if (autoClickTargets.Length == 0) {
         autoClickTargets := ["Submit", "Accept", "Proceed", "Run", "Approve"]
+    }
+
+    ; FindText 텍스트 문자열 목록 로딩
+    findTextTargets := []
+    Loop 20 {
+        val := IniRead(IniFile, "FindTextTargets", "Target" A_Index, "")
+        if (val != "")
+            findTextTargets.Push(val)
     }
 }
 
@@ -131,16 +141,22 @@ Volume_Down::Send("{Enter}")
 #HotIf
 
 ; ==============================================================================
-; ImageSearch 기반 자동 스캔 & 클릭
+; FindText 기반 자동 스캔 & 클릭
 ; ==============================================================================
 AutoScan() {
+    global findTextTargets
+
     if !WinExist("ahk_exe i)Antigravity")
         return
 
-    ; 좌표계를 화면 전체(Screen) 기준으로 통일 (창이 비활성 상태여도 검색 가능하도록)
-    CoordMode "Pixel", "Screen"
-    
-    ; 창의 내부 크기(Client Area)와 화면상의 절대 좌표(cx, cy) 획득
+    ; FindText 타겟이 없으면 사용자에게 안내 후 종료
+    if (findTextTargets.Length = 0) {
+        ToolTip("⚠️ FindText 타겟 미등록`nLib\FindText.ahk를 실행해 버튼을 캡처하세요.", 10, 50, 2)
+        SetTimer(() => ToolTip(,,, 2), -3000)
+        return
+    }
+
+    ; 창의 Client Area 절대 좌표 획득
     try {
         WinGetClientPos(&cx, &cy, &cw, &ch, "ahk_exe i)Antigravity")
         if (cw <= 0 || ch <= 0)
@@ -148,59 +164,33 @@ AutoScan() {
     } catch {
         return
     }
-    
-    targetFolder := A_ScriptDir "\img_targets"
-    if !DirExist(targetFolder) {
-        DirCreate(targetFolder)
-        return
-    }
 
-    Loop Files, targetFolder "\*.*" {
-        ext := RegExReplace(A_LoopFileName, "^.*\.")
-        if !(ext = "png" || ext = "bmp")
-            continue
+    ; 검색 범위: 창의 Client Area 전체 (Screen 절대 좌표)
+    x1 := cx, y1 := cy, x2 := cx + cw, y2 := cy + ch
 
-        ToolTip("검색 시도 중: " A_LoopFileName " (창 크기: " cw "x" ch ")", 10, 10)
-        SetTimer(() => ToolTip(,,, 1), -1000)
+    ToolTip("🔍 FindText 검색 중...", 10, 10, 1)
+    SetTimer(() => ToolTip(,,, 1), -800)
 
-        ; 오차 범위를 80으로 높여 투명도/그림자/안티앨리어싱 차이 허용
-        try {
-            found := ImageSearch(&FoundX, &FoundY, cx, cy, cx + cw, cy + ch, "*80 " A_LoopFilePath)
-        } catch {
-            return
-        }
+    for ftStr in findTextTargets {
+        ; FindText 호출: (반환 &x, &y, &w, &h, 검색범위x1,y1,x2,y2, 텍스트문자열)
+        ok := FindText(&fx, &fy, &fw, &fh, x1, y1, x2, y2, ftStr)
 
-        if (found) {
-            
-            ; 캡처한 이미지의 실제 가로/세로 길이를 알아내어 '정중앙'을 클릭하도록 개선
-            imgW := 30
-            imgH := 30
-            try {
-                tempGui := Gui()
-                pic := tempGui.Add("Picture",, A_LoopFilePath)
-                pic.GetPos(,, &imgW, &imgH)
-                tempGui.Destroy()
-            }
-            
-            ; FoundX, FoundY는 Screen 기준 좌표이므로, ControlClick을 위해 Client 상대 좌표로 변환
-            ClickX := FoundX - cx + (imgW // 2)
-            ClickY := FoundY - cy + (imgH // 2)
-            
+        if (ok) {
+            ; 매칭 영역 중앙을 계산하여 Client 상대 좌표로 변환
+            ClickX := fx - cx + (fw // 2)
+            ClickY := fy - cy + (fh // 2)
+
             ; 대상 창의 Client 좌표를 클릭 (NA: 마우스 포커스 뺏지 않음)
             ControlClick("x" ClickX " y" ClickY, "ahk_exe i)Antigravity",,,, "NA")
-            
-            ; 매칭 성공 여부를 화면에 띄워줌
-            ToolTip("✔️ 찾음 & 클릭 시도: " A_LoopFileName, 10, 50, 2)
+
+            ToolTip("✔️ 찾음 & 클릭: (" ClickX ", " ClickY ")", 10, 50, 2)
             SetTimer(() => ToolTip(,,, 2), -2000)
-            
-            break
+            return
         }
     }
-    
-    if (!found) {
-        ToolTip("❌ 이미지를 찾지 못했습니다.", 10, 50, 2)
-        SetTimer(() => ToolTip(,,, 2), -2000)
-    }
+
+    ToolTip("❌ 버튼을 찾지 못했습니다.", 10, 50, 2)
+    SetTimer(() => ToolTip(,,, 2), -2000)
 }
 
 ; ==============================================================================
