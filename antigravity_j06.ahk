@@ -11,7 +11,7 @@ global IniFile := A_ScriptDir "\antigravity_j06.ini"
 global autoEnabled := 0
 global guiX := ""
 global guiY := ""
-global scanIntervalMs := 1000
+global scanIntervalMs := 2000
 
 global autoClickTargets := []
 global findTextTargets := []   ; FindText 검색 문자열 목록 (INI [FindTextTargets]에서 로딩)
@@ -20,14 +20,14 @@ global findTextTargets := []   ; FindText 검색 문자열 목록 (INI [FindText
 ; INI 파일 처리
 ; ==============================================================================
 LoadSettings() {
-    global autoEnabled, guiX, guiY, scanIntervalMs, autoClickTargets
+    global autoEnabled, guiX, guiY, scanIntervalMs, autoClickTargets, findTextTargets
 
     if !FileExist(IniFile) {
         ; 기본 설정 파일 생성
         IniWrite 0, IniFile, "General", "AutoEnabled"
         IniWrite "", IniFile, "General", "GuiX"
         IniWrite "", IniFile, "General", "GuiY"
-        IniWrite 1000, IniFile, "General", "ScanIntervalMs"
+        IniWrite 2000, IniFile, "General", "ScanIntervalMs"
 
         IniWrite "Submit", IniFile, "AutoClickTargets", "Button1"
         IniWrite "Accept", IniFile, "AutoClickTargets", "Button2"
@@ -39,7 +39,7 @@ LoadSettings() {
     autoEnabled := IniRead(IniFile, "General", "AutoEnabled", 0)
     guiX := IniRead(IniFile, "General", "GuiX", "")
     guiY := IniRead(IniFile, "General", "GuiY", "")
-    scanIntervalMs := IniRead(IniFile, "General", "ScanIntervalMs", 1000)
+    scanIntervalMs := IniRead(IniFile, "General", "ScanIntervalMs", 2000)
 
     autoClickTargets := []
     Loop 10 {
@@ -55,8 +55,11 @@ LoadSettings() {
     findTextTargets := []
     Loop 20 {
         val := IniRead(IniFile, "FindTextTargets", "Target" A_Index, "")
-        if (val != "")
+        if (val != "") {
+            ; 사용자가 INI에 큰따옴표를 넣었을 경우 제거
+            val := Trim(val, "`"")
             findTextTargets.Push(val)
+        }
     }
 }
 
@@ -110,6 +113,11 @@ UpdateStatusLED() {
 OnAutoToggle(ctrl, *) {
     global autoEnabled
     autoEnabled := ctrl.Value
+    if (autoEnabled) {
+        ; Auto 켤 때 INI를 다시 읽어서 수정사항을 즉시 반영
+        LoadSettings()
+        autoEnabled := 1 ; LoadSettings가 값을 덮어쓸 수 있으므로 다시 설정
+    }
     SaveSettings()
     UpdateStatusLED()
 }
@@ -146,7 +154,8 @@ Volume_Down::Send("{Enter}")
 AutoScan() {
     global findTextTargets
 
-    if !WinExist("ahk_exe i)Antigravity")
+    hwnds := WinGetList("ahk_exe i)Antigravity")
+    if (hwnds.Length == 0)
         return
 
     ; FindText 타겟이 없으면 사용자에게 안내 후 종료
@@ -156,41 +165,44 @@ AutoScan() {
         return
     }
 
-    ; 창의 Client Area 절대 좌표 획득
-    try {
-        WinGetClientPos(&cx, &cy, &cw, &ch, "ahk_exe i)Antigravity")
-        if (cw <= 0 || ch <= 0)
-            return
-    } catch {
-        return
-    }
+    for hwnd in hwnds {
+        ; 최소화된 창은 화면 스캔이 불가능하므로 건너뜀
+        if (WinGetMinMax(hwnd) == -1)
+            continue
 
-    ; 검색 범위: 창의 Client Area 전체 (Screen 절대 좌표)
-    x1 := cx, y1 := cy, x2 := cx + cw, y2 := cy + ch
+        ; 창의 Client Area 절대 좌표 획득
+        try {
+            WinGetClientPos(&cx, &cy, &cw, &ch, hwnd)
+            if (cw <= 0 || ch <= 0)
+                continue
+        } catch {
+            continue
+        }
 
-    ToolTip("🔍 FindText 검색 중...", 10, 10, 1)
-    SetTimer(() => ToolTip(,,, 1), -800)
+        ; 검색 범위: 창의 Client Area 전체 (Screen 절대 좌표)
+        x1 := cx, y1 := cy, x2 := cx + cw, y2 := cy + ch
 
-    for ftStr in findTextTargets {
-        ; FindText 호출: (반환 &x, &y, &w, &h, 검색범위x1,y1,x2,y2, 텍스트문자열)
-        ok := FindText(&fx, &fy, &fw, &fh, x1, y1, x2, y2, ftStr)
+        for ftStr in findTextTargets {
+            ; FindText 호출: FindText(&X, &Y, x1, y1, x2, y2, err1, err0, Text)
+            ok := FindText(&fx, &fy, x1, y1, x2, y2, 0, 0, ftStr)
 
-        if (ok) {
-            ; 매칭 영역 중앙을 계산하여 Client 상대 좌표로 변환
-            ClickX := fx - cx + (fw // 2)
-            ClickY := fy - cy + (fh // 2)
+            if (ok) {
+                ; fx, fy는 이미 매칭된 이미지의 정중앙 좌표(Screen 기준)입니다.
+                ; ControlClick을 위해 Client 상대 좌표로 변환합니다.
+                ClickX := fx - cx
+                ClickY := fy - cy
 
-            ; 대상 창의 Client 좌표를 클릭 (NA: 마우스 포커스 뺏지 않음)
-            ControlClick("x" ClickX " y" ClickY, "ahk_exe i)Antigravity",,,, "NA")
+                ; 대상 창의 Client 좌표를 클릭 (NA: 마우스 포커스 뺏지 않음)
+                ControlClick("x" ClickX " y" ClickY, hwnd,,,, "NA")
 
-            ToolTip("✔️ 찾음 & 클릭: (" ClickX ", " ClickY ")", 10, 50, 2)
-            SetTimer(() => ToolTip(,,, 2), -2000)
-            return
+                ToolTip("✔️ 찾음 & 클릭: (" ClickX ", " ClickY ")", 10, 50, 2)
+                SetTimer(() => ToolTip(,,, 2), -2000)
+                
+                ; 이 창에서 버튼을 찾았으므로 더 이상 찾지 않고 다음 창으로 넘어감
+                break 
+            }
         }
     }
-
-    ToolTip("❌ 버튼을 찾지 못했습니다.", 10, 50, 2)
-    SetTimer(() => ToolTip(,,, 2), -2000)
 }
 
 ; ==============================================================================
