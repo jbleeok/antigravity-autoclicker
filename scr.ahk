@@ -352,8 +352,8 @@ CreateMainGui() {
         cardW := 175
         cardH := 140
         gap := 20
-        guiW := 400
-        surroundW := 370
+        guiW := 15 + (cardW * monitorCount) + (gap * (monitorCount - 1)) + 15
+        surroundW := guiW - 30
         btnW := 150
         btnH := 28
     } else {
@@ -379,8 +379,7 @@ CreateMainGui() {
         
         ; 카드 레이아웃 배경 생성
         if (monitorCount >= 2) {
-            ; 2개 이상일 때: 카드 1은 x15 y15, 카드 2는 x210 ys (15 + 175 + 20 = 210)
-            cardX := (A_Index == 1) ? 15 : 210
+            cardX := 15 + (A_Index - 1) * (cardW + gap)
             cardOpt := "x" cardX " y15 Section"
         } else {
             cardOpt := "x15 y15 Section"
@@ -546,6 +545,28 @@ GetPreviousActiveWindow() {
     return 0
 }
 
+GetSortedMonitors() {
+    count := MonitorGetCount()
+    monitors := []
+    Loop count {
+        MonitorGet(A_Index, &left, &top, &right, &bottom)
+        monitors.Push({index: A_Index, left: left, top: top, right: right, bottom: bottom, w: right - left, h: bottom - top})
+    }
+    
+    Loop count {
+        i := A_Index
+        Loop count - i {
+            j := A_Index
+            if (monitors[j].left > monitors[j+1].left) {
+                temp := monitors[j]
+                monitors[j] := monitors[j+1]
+                monitors[j+1] := temp
+            }
+        }
+    }
+    return monitors
+}
+
 SetWindowBorderlessPosition(hwnd, position) {
     global winStates
     if !hwnd
@@ -572,19 +593,55 @@ SetWindowBorderlessPosition(hwnd, position) {
         return
     }
     
-    screenWidth := A_ScreenWidth
-    screenHeight := A_ScreenHeight
+    monitors := GetSortedMonitors()
+    count := monitors.Length
     
     targetX := 0
     targetY := 0
-    targetW := screenWidth
-    targetH := screenHeight
+    targetW := 0
+    targetH := 0
     
-    if position == "LEFT" {
-        targetW := screenWidth / 2
-    } else if position == "RIGHT" {
-        targetX := screenWidth / 2
-        targetW := screenWidth / 2
+    if position == "FULL" {
+        minX := 999999, minY := 999999, maxX := -999999, maxY := -999999
+        for m in monitors {
+            if m.left < minX
+                minX := m.left
+            if m.top < minY
+                minY := m.top
+            if m.right > maxX
+                maxX := m.right
+            if m.bottom > maxY
+                maxY := m.bottom
+        }
+        targetX := minX
+        targetY := minY
+        targetW := maxX - minX
+        targetH := maxY - minY
+    } else {
+        if count >= 2 {
+            if position == "LEFT" {
+                targetX := monitors[1].left
+                targetY := monitors[1].top
+                targetW := monitors[1].w
+                targetH := monitors[1].h
+            } else if position == "RIGHT" {
+                targetX := monitors[count].left
+                targetY := monitors[count].top
+                targetW := monitors[count].w
+                targetH := monitors[count].h
+            }
+        } else {
+            m := monitors[1]
+            targetY := m.top
+            targetH := m.h
+            if position == "LEFT" {
+                targetX := m.left
+                targetW := m.w / 2
+            } else if position == "RIGHT" {
+                targetX := m.left + (m.w / 2)
+                targetW := m.w / 2
+            }
+        }
     }
     
     try {
