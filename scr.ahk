@@ -21,6 +21,8 @@ CreateBlankCursor() {
 }
 
 global MainGui := ""
+global MiniGui := ""
+global isMainVisible := false
 global monitorState := Map()     ; 모니터 상태 ("ON", "DDC_OFF", "BLACKOUT_OFF")
 global blackoutGuis := Map()     ; 블랙아웃 GUI 객체들
 global blackoutHwnds := Map()    ; 블랙아웃 HWND -> 모니터 인덱스 매핑
@@ -296,10 +298,13 @@ WM_SETCURSOR(wParam, lParam, msg, hwnd) {
 }
 
 RebuildGui() {
-    global MainGui, monitorState, blackoutGuis, ddcButtons, blackButtons, statusLabels, hMonitorMap
+    global MainGui, MiniGui, monitorState, blackoutGuis, ddcButtons, blackButtons, statusLabels, hMonitorMap
     try {
         DllCall("wtsapi32\WTSUnRegisterSessionNotification", "ptr", MainGui.Hwnd)
         MainGui.Destroy()
+    }
+    if IsSet(MiniGui) && MiniGui {
+        MiniGui.Destroy()
     }
     monitorState := Map()
     blackoutGuis := Map()
@@ -309,6 +314,7 @@ RebuildGui() {
     hMonitorMap := GetHMonitorMap()
     CustomButton.buttons := Map()
     CreateMainGui()
+    CreateMiniGui()
 }
 
 ; -----------------------------------------------------------------------------
@@ -456,9 +462,9 @@ CreateMainGui() {
         CustomButton(MainGui, "xs+185 ys+75 w" btnW " h" btnH, "↩ 원래 크기로 복원", OnSurroundRestore, "64748B", "94A3B8")
     }
     
-    ; GUI 표시
-    MainGui.Show("x10 y10 w" guiW)
-    MainGui.OnEvent("Close", (*) => MainGui.Hide())
+    ; GUI 표시 (최초에는 크기만 잡고 숨겨둠)
+    MainGui.Show("Hide w" guiW)
+    MainGui.OnEvent("Close", (*) => HideMainGuiToMini())
     
     ; 세션 변경(잠금/잠금해제) 알림 등록 (0 = NOTIFY_FOR_THIS_SESSION)
     try {
@@ -479,8 +485,7 @@ A_TrayMenu.Add("종료", (*) => ExitProgram())
 A_TrayMenu.Default := "열기"
 
 ShowGui() {
-    MainGui.Show()
-    MainGui.Restore()
+    ShowMainGuiFromMini()
 }
 
 ; 이벤트 및 메시지 연결
@@ -496,7 +501,13 @@ WM_DISPLAYCHANGE(wParam, lParam, msg, hwnd) {
 }
 
 WM_LBUTTONDOWN(wParam, lParam, msg, hwnd) {
-    global blackoutHwnds
+    global blackoutHwnds, MiniGui
+    ; 미니 아이콘 드래그 이동 지원
+    if IsSet(MiniGui) && MiniGui && (hwnd == MiniGui.Hwnd || DllCall("GetParent", "ptr", hwnd) == MiniGui.Hwnd) {
+        PostMessage(0xA1, 2, 0, hwnd)
+        return
+    }
+    
     ; 클릭한 창이 블랙아웃 화면인지 확인
     if blackoutHwnds.Has(hwnd) {
         index := blackoutHwnds[hwnd]
@@ -703,6 +714,96 @@ OnSurroundRestore(btn) {
         SetWindowBorderlessPosition(hwnd, "NORMAL")
 }
 
+; -----------------------------------------------------------------------------
+; 오토 하이드 및 미니 아이콘 기능
+; -----------------------------------------------------------------------------
+CreateMiniGui() {
+    global MiniGui
+    MiniGui := Gui("+AlwaysOnTop -Caption +ToolWindow", "모니터 제어기 아이콘")
+    MiniGui.BackColor := "3B82F6" ; Blue-500
+    
+    MiniGui.AddText("w40 h40 Background3B82F6 Center +0x200 cFFFFFF", "🖥️")
+    
+    ; 화면 우측 하단 배치
+    x := A_ScreenWidth - 60
+    y := A_ScreenHeight - 100
+    MiniGui.Show("x" x " y" y " w40 h40 NoActivate")
+}
+
+ShowMainGuiFromMini() {
+    global MainGui, MiniGui, isMainVisible
+    if isMainVisible
+        return
+    isMainVisible := true
+    
+    ; MainGui 크기 가져오기
+    MainGui.GetPos(&gx, &gy, &gw, &gh)
+    
+    ; MiniGui 위치 기준으로 위치 설정 (우측 하단에서 위로 팝업)
+    if IsSet(MiniGui) && MiniGui {
+        MiniGui.GetPos(&mx, &my, &mw, &mh)
+        ; 마우스 이동 시 빈 공간(Gap)이 생기지 않도록 살짝 겹치게 설정
+        targetX := mx - gw + mw + 5
+        targetY := my - gh + 5
+        
+        ; 음수 방지
+        if (targetX < 0)
+            targetX := 0
+        if (targetY < 0)
+            targetY := 0
+    } else {
+        targetX := 10
+        targetY := 10
+    }
+    
+    MainGui.Show("x" targetX " y" targetY " NoActivate")
+}
+
+HideMainGuiToMini() {
+    global MainGui, isMainVisible
+    if !isMainVisible
+        return
+    isMainVisible := false
+    MainGui.Hide()
+}
+
+TrackMousePosition() {
+    global MainGui, MiniGui, isMainVisible
+    static hideTimeout := 0
+    
+    if !MainGui || !MiniGui
+        return
+        
+    ; 마우스 아래의 최상위 윈도우 핸들을 직접 가져옴 (좌표 오차 원천 차단)
+    MouseGetPos(,, &hoveredWin)
+    
+    isHoveringMini := (hoveredWin == MiniGui.Hwnd)
+    isHoveringMain := (hoveredWin == MainGui.Hwnd)
+    
+    if (isHoveringMini) {
+        if (!isMainVisible) {
+            ShowMainGuiFromMini()
+        }
+        hideTimeout := 0
+        return
+    }
+    
+    if (isMainVisible) {
+        if (!isHoveringMain && !isHoveringMini) {
+            if (hideTimeout == 0)
+                hideTimeout := A_TickCount + 500 ; 0.5초 유예시간 (여유롭게 드래그)
+            else if (A_TickCount > hideTimeout) {
+                HideMainGuiToMini()
+                hideTimeout := 0
+            }
+        } else {
+            hideTimeout := 0
+        }
+    }
+}
+
 ; 메인 구동
 hMonitorMap := GetHMonitorMap()
 CreateMainGui()
+CreateMiniGui()
+SetTimer(TrackMousePosition, 100)
