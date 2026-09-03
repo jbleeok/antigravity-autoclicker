@@ -773,12 +773,20 @@ TrackMousePosition() {
     
     if !MainGui || !MiniGui
         return
-        
+
+    ; 절전/잠금 복귀 직후 Hwnd가 아직 유효하지 않을 수 있으므로 보호
+    try {
+        miniHwnd := MiniGui.Hwnd
+        mainHwnd := MainGui.Hwnd
+    } catch {
+        return
+    }
+
     ; 마우스 아래의 최상위 윈도우 핸들을 직접 가져옴 (좌표 오차 원천 차단)
     MouseGetPos(,, &hoveredWin)
     
-    isHoveringMini := (hoveredWin == MiniGui.Hwnd)
-    isHoveringMain := (hoveredWin == MainGui.Hwnd)
+    isHoveringMini := (hoveredWin == miniHwnd)
+    isHoveringMain := (hoveredWin == mainHwnd)
     
     if (isHoveringMini) {
         if (!isMainVisible) {
