@@ -81,10 +81,11 @@ ProcessTranscription(wavFile) {
         "http://localhost:8000/v1/audio/transcriptions")
     model := IniRead(AppGui.IniPath, "API", "Model", "medium")
     lang := IniRead(AppGui.IniPath, "API", "Language", "")
+    initialPrompt := IniRead(AppGui.IniPath, "API", "InitialPrompt", "")
     autoPaste := Integer(IniRead(AppGui.IniPath, "API", "AutoPaste", "1"))
 
     try {
-        text := TranscribeAudio(endpoint, wavFile, model, lang)
+        text := TranscribeAudio(endpoint, wavFile, model, lang, initialPrompt)
 
         if (text == "") {
             AppGui.SetTranscription("(인식된 텍스트 없음)")

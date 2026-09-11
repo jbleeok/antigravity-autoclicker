@@ -5,7 +5,7 @@
 ;  WinHttp COM으로 multipart/form-data POST 전송
 ; ============================================================
 
-TranscribeAudio(endpoint, wavFilePath, model := "medium", language := "") {
+TranscribeAudio(endpoint, wavFilePath, model := "medium", language := "", initialPrompt := "") {
     boundary := "----WhisperSTTBoundary" . A_TickCount . Random(100000, 999999)
     CRLF := "`r`n"
 
@@ -29,6 +29,12 @@ TranscribeAudio(endpoint, wavFilePath, model := "medium", language := "") {
         headerText .= "--" . boundary . CRLF
         headerText .= 'Content-Disposition: form-data; name="language"' . CRLF . CRLF
         headerText .= language . CRLF
+    }
+
+    if (initialPrompt != "") {
+        headerText .= "--" . boundary . CRLF
+        headerText .= 'Content-Disposition: form-data; name="prompt"' . CRLF . CRLF
+        headerText .= initialPrompt . CRLF
     }
 
     headerText .= "--" . boundary . CRLF

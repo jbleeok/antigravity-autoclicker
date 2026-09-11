@@ -33,41 +33,19 @@ class AppGui {
                     "Int", attr, "Int*", 1, "Int", 4)
         }
 
-        ; 마이크 선택 라벨
-        this.mainGui.SetFont("s8 cA0A0A0")
-        this.mainGui.Add("Text", "x10 y8 w230", "INPUT DEVICE")
-
         ; 설정 버튼
         this.mainGui.SetFont("s10 cD0D0D0")
-        btnSettings := this.mainGui.Add("Button", "x270 y4 w30 h24", "⚙")
+        btnSettings := this.mainGui.Add("Button", "x10 y10 w30 h34", "⚙")
         btnSettings.OnEvent("Click", (*) => this.ShowSettings())
-
-        ; 마이크 드롭다운
-        micNames := ["시스템 기본 장치"]
-        for d in this.devices
-            micNames.Push(d.name)
-
-        savedMicIndex := Integer(IniRead(this.IniPath, "Audio", "DeviceIndex", "1"))
-        if (savedMicIndex > micNames.Length || savedMicIndex < 1)
-            savedMicIndex := 1
-
-        this.mainGui.SetFont("s9 cE0E0E0")
-        this.micDropdown := this.mainGui.Add("DropDownList", "x10 y28 w290 Choose" . savedMicIndex, micNames)
-        this.micDropdown.OnEvent("Change", (*) => IniWrite(this.micDropdown.Value, this.IniPath, "Audio", "DeviceIndex"))
-
-        ; 녹음 버튼 (상태 표시)
-        this.mainGui.SetFont("s10 cE0E0E0 Bold")
-        this.btnRecord := this.mainGui.Add("Button", "x10 y60 w290 h30", "🎤  F9를 꾹 눌러 말하세요")
-        this.btnRecord.Enabled := false  ; 표시용 (실제 녹음은 F9 핫키로)
-
-        ; 결과 라벨
-        this.mainGui.SetFont("s8 cA0A0A0 Norm")
-        this.mainGui.Add("Text", "x10 y96 w290", "LAST TRANSCRIPTION")
 
         ; 결과 텍스트
         this.mainGui.SetFont("s9 cE0E0E0 Norm")
-        this.editResult := this.mainGui.Add("Edit", "x10 y114 w290 r2 ReadOnly -E0x200 Background2A2A2A",
+        this.editResult := this.mainGui.Add("Edit", "x45 y10 w215 r2 ReadOnly -E0x200 Background2A2A2A",
             "준비 완료. F9를 꾹 누르고 말하세요.")
+
+        ; 녹음 상태 표시 라벨 (우측 정사각형)
+        this.mainGui.SetFont("s16 cE0E0E0 Bold")
+        this.btnRecord := this.mainGui.Add("Text", "x265 y10 w35 h34 Border Center 0x200 Background333333", "🎤")
 
         ; 이벤트
         this.mainGui.OnEvent("Close", (*) => this.OnClose())
@@ -80,9 +58,9 @@ class AppGui {
         savedX := IniRead(this.IniPath, "Window", "X", "")
         savedY := IniRead(this.IniPath, "Window", "Y", "")
         if (savedX != "" && savedY != "")
-            this.mainGui.Show("x" . savedX . " y" . savedY . " w310 h165")
+            this.mainGui.Show("x" . savedX . " y" . savedY . " w310 h54")
         else
-            this.mainGui.Show("w310 h165")
+            this.mainGui.Show("w310 h54")
     }
 
     static SetupTray() {
@@ -107,18 +85,18 @@ class AppGui {
     static SetState(state) {
         switch state {
             case "ready":
-                this.btnRecord.Text := "🎤  F9를 꾹 눌러 말하세요"
+                this.btnRecord.Text := "🎤"
                 this.isProcessing := false
             case "recording":
-                this.btnRecord.Text := "🔴  녹음 중... (F9에서 손을 떼세요)"
+                this.btnRecord.Text := "🔴"
             case "processing":
-                this.btnRecord.Text := "⏳  텍스트 변환 중..."
+                this.btnRecord.Text := "⏳"
                 this.isProcessing := true
             case "done":
-                this.btnRecord.Text := "✅  완료! 클립보드에 복사됨"
+                this.btnRecord.Text := "✅"
                 SetTimer(() => this.SetState("ready"), -2000)
             case "error":
-                this.btnRecord.Text := "❌  오류 발생"
+                this.btnRecord.Text := "❌"
                 SetTimer(() => this.SetState("ready"), -3000)
         }
     }
@@ -134,19 +112,31 @@ class AppGui {
         sg.MarginX := 15
         sg.MarginY := 10
 
+        ; 입력 장치 (마이크)
+        sg.SetFont("s8 cA0A0A0")
+        sg.Add("Text", "x15 y10 w310", "입력 장치 (마이크)")
+        sg.SetFont("s9 cBlack")
+        micNames := ["시스템 기본 장치"]
+        for d in this.devices
+            micNames.Push(d.name)
+        savedMicIndex := Integer(IniRead(this.IniPath, "Audio", "DeviceIndex", "1"))
+        if (savedMicIndex > micNames.Length || savedMicIndex < 1)
+            savedMicIndex := 1
+        ddMic := sg.Add("DropDownList", "x15 y28 w310 Choose" . savedMicIndex, micNames)
+
         ; 서버 주소
         sg.SetFont("s8 cA0A0A0")
-        sg.Add("Text", "x15 y10 w310", "WHISPER 서버 주소")
-        sg.SetFont("s9 cE0E0E0")
-        edEndpoint := sg.Add("Edit", "x15 y28 w310",
+        sg.Add("Text", "x15 y60 w310", "WHISPER 서버 주소")
+        sg.SetFont("s9 cBlack")
+        edEndpoint := sg.Add("Edit", "x15 y78 w310",
             IniRead(this.IniPath, "API", "Endpoint", "http://localhost:8000/v1/audio/transcriptions"))
 
         ; 모델 / 언어
         sg.SetFont("s8 cA0A0A0")
-        sg.Add("Text", "x15 y60 w145", "모델")
-        sg.Add("Text", "x180 y60 w145", "언어 (빈칸=자동감지)")
+        sg.Add("Text", "x15 y110 w145", "모델")
+        sg.Add("Text", "x180 y110 w145", "언어 (빈칸=자동감지)")
 
-        sg.SetFont("s9 cE0E0E0")
+        sg.SetFont("s9 cBlack")
         modelChoices := ["tiny", "base", "small", "medium", "large-v3"]
         savedModel := IniRead(this.IniPath, "API", "Model", "medium")
         modelIdx := 1
@@ -154,33 +144,42 @@ class AppGui {
             if (m == savedModel)
                 modelIdx := i
         }
-        ddModel := sg.Add("DropDownList", "x15 y78 w145 Choose" . modelIdx, modelChoices)
+        ddModel := sg.Add("DropDownList", "x15 y128 w145 Choose" . modelIdx, modelChoices)
 
-        edLang := sg.Add("Edit", "x180 y78 w145",
+        edLang := sg.Add("Edit", "x180 y128 w145",
             IniRead(this.IniPath, "API", "Language", ""))
+
+        ; 초기 프롬프트 (힌트)
+        sg.SetFont("s8 cA0A0A0")
+        sg.Add("Text", "x15 y160 w310", "초기 프롬프트 (영단어/고유명사 힌트)")
+        sg.SetFont("s9 cBlack")
+        edPrompt := sg.Add("Edit", "x15 y178 w310",
+            IniRead(this.IniPath, "API", "InitialPrompt", "AutoHotkey, Docker, Python, API, 텍스트, 코드, UI, Git, GitHub"))
 
         ; 체크박스들
         sg.SetFont("s9 cD0D0D0")
-        chkPaste := sg.Add("Checkbox", "x15 y115 w310", "변환 후 자동 붙여넣기 (Ctrl+V)")
+        chkPaste := sg.Add("Checkbox", "x15 y215 w310", "변환 후 자동 붙여넣기 (Ctrl+V)")
         chkPaste.Value := Integer(IniRead(this.IniPath, "API", "AutoPaste", "1"))
 
-        chkAuto := sg.Add("Checkbox", "x15 y140 w310", "Windows 로그인 시 자동 시작")
+        chkAuto := sg.Add("Checkbox", "x15 y240 w310", "Windows 로그인 시 자동 시작")
         chkAuto.Value := this.IsAutoStartEnabled()
 
         ; 버튼
-        btnSave := sg.Add("Button", "x140 y175 w85 h28 Default", "저장")
-        btnCancel := sg.Add("Button", "x240 y175 w85 h28", "취소")
+        btnSave := sg.Add("Button", "x140 y275 w85 h28 Default", "저장")
+        btnCancel := sg.Add("Button", "x240 y275 w85 h28", "취소")
 
-        btnSave.OnEvent("Click", (*) => this._SaveSettings(sg, edEndpoint, ddModel, modelChoices, edLang, chkPaste, chkAuto))
+        btnSave.OnEvent("Click", (*) => this._SaveSettings(sg, ddMic, edEndpoint, ddModel, modelChoices, edLang, edPrompt, chkPaste, chkAuto))
         btnCancel.OnEvent("Click", (*) => sg.Destroy())
 
-        sg.Show("w340 h215")
+        sg.Show("w340 h315")
     }
 
-    static _SaveSettings(sg, edEndpoint, ddModel, modelChoices, edLang, chkPaste, chkAuto) {
+    static _SaveSettings(sg, ddMic, edEndpoint, ddModel, modelChoices, edLang, edPrompt, chkPaste, chkAuto) {
+        IniWrite(ddMic.Value, this.IniPath, "Audio", "DeviceIndex")
         IniWrite(edEndpoint.Value, this.IniPath, "API", "Endpoint")
         IniWrite(modelChoices[ddModel.Value], this.IniPath, "API", "Model")
         IniWrite(edLang.Value, this.IniPath, "API", "Language")
+        IniWrite(edPrompt.Value, this.IniPath, "API", "InitialPrompt")
         IniWrite(chkPaste.Value, this.IniPath, "API", "AutoPaste")
         this.SetAutoStart(chkAuto.Value)
         sg.Destroy()
